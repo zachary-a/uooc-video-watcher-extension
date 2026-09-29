@@ -3,6 +3,8 @@ const BLOCKED_THRESHOLD_MS = 15 * 1000;
 const PROGRESS_THROTTLE_MS = 15 * 1000;
 const HEARTBEAT_INTERVAL_MS = 5000;
 const TARGET_PLAYBACK_RATE = 2;
+const NEXT_VIDEO_SETTLE_MS = 2500;
+const NEXT_VIDEO_CONFIRM_MS = 8000;
 
 const BLOCKING_SELECTORS = [
   ".el-dialog__wrapper",
@@ -34,7 +36,11 @@ const state = {
   lastProgressSentAt: 0,
   lastBlockedReportAt: 0,
   tabMuted: false,
-  heartbeatStarted: false
+  heartbeatStarted: false,
+  endedVideo: null,
+  endedSource: null,
+  nextVideoTimerId: null,
+  videoIdentity: null
 };
 
 bootstrap();
@@ -120,7 +126,16 @@ function attachToBestVideo() {
   }
 
   state.video = nextVideo;
+  state.videoIdentity = `${Date.now()}-${Math.random()}`;
   attachVideoListeners(nextVideo);
+  if (state.endedVideo && !nextVideo.ended &&
+      (nextVideo.currentSrc || nextVideo.src) &&
+      (nextVideo.currentSrc || nextVideo.src) !== state.endedSource) {
+    finishAutoNext(true);
+  }
+  if (!nextVideo.ended) {
+    void sendMessage({ type: "VIDEO_SELECTED", payload: buildPayload("video-selected") });
+  }
   applyVideoPreferences();
   void ensureTabMuted(nextVideo);
 
@@ -247,12 +262,116 @@ function handlePause() {
 }
 
 function handleEnded() {
+  if (state.endedVideo === state.video) {
+    return;
+  }
   clearPauseTimer();
   state.overlaySeenSince = null;
+  state.endedVideo = state.video;
+  state.endedSource = state.video?.currentSrc || state.video?.src || "";
 
   void sendMessage({
     type: "STATUS_UPDATE",
-    payload: buildPayload("ended")
+    payload: buildPayload("ended-pending")
+  });
+
+  state.nextVideoTimerId = window.setTimeout(() => {
+    void tryNextVideo(state.endedVideo);
+  }, NEXT_VIDEO_SETTLE_MS);
+}
+
+async function tryNextVideo(endedVideo) {
+  if (!endedVideo || state.endedVideo !== endedVideo) {
+    return;
+  }
+  if (!endedVideo.ended) {
+    finishAutoNext((endedVideo.currentSrc || endedVideo.src) !== state.endedSource);
+    return;
+  }
+
+  if (findBlockingElement()) {
+    finishAutoNext(false);
+    return;
+  }
+
+  const nextControl = findAvailableNextControl();
+  if (!nextControl) {
+    finishAutoNext(false);
+    return;
+  }
+
+  const oldSource = endedVideo.currentSrc || endedVideo.src;
+  nextControl.click();
+
+  // A normal page navigation may unload this script. The background worker
+  // keeps the pending reminder until a new video is actually selected.
+  await new Promise((resolve) => window.setTimeout(resolve, NEXT_VIDEO_CONFIRM_MS));
+  if (state.endedVideo !== endedVideo) {
+    return;
+  }
+
+  const current = pickBestVideo();
+  const sourceChanged = current && (current.currentSrc || current.src) &&
+    (current.currentSrc || current.src) !== oldSource;
+  if (current && !current.ended && sourceChanged) {
+    finishAutoNext(true);
+  } else {
+    finishAutoNext(false);
+  }
+}
+
+function findAvailableNextControl() {
+  const activeVideoItem = [...document.querySelectorAll(".basic.active")]
+    .find((item) => item.querySelector(".icon-video"));
+  if (activeVideoItem) {
+    const items = [...document.querySelectorAll(".basic")];
+    const nextItem = items[items.indexOf(activeVideoItem) + 1];
+    // Do not skip a quiz, locked item, or collapsed chapter to reach a later video.
+    return nextItem?.querySelector(".icon-video") &&
+      !nextItem.querySelector(".icon-lock, .icon-locked") && isAvailableControl(nextItem)
+      ? nextItem : null;
+  }
+
+  const controls = document.querySelectorAll("button, a, [role='button']");
+  for (const control of controls) {
+    const label = [control.textContent, control.getAttribute("aria-label"), control.getAttribute("title")]
+      .filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+    if (!/下一(?:节视频|个视频|段视频|视频)/.test(label)) {
+      continue;
+    }
+    if (isAvailableControl(control)) {
+      return control;
+    }
+  }
+  return null;
+}
+
+function isAvailableControl(control) {
+  if (control.closest("[disabled], [aria-disabled='true'], [inert], .disabled, .is-disabled, .locked, .is-locked")) {
+    return false;
+  }
+  const style = window.getComputedStyle(control);
+  if (style.display === "none" || style.visibility === "hidden" || style.pointerEvents === "none") {
+    return false;
+  }
+  const rect = control.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.right > 0 &&
+    rect.top < window.innerHeight && rect.left < window.innerWidth;
+}
+
+function finishAutoNext(succeeded) {
+  if (!state.endedVideo) {
+    return;
+  }
+  if (state.nextVideoTimerId) {
+    window.clearTimeout(state.nextVideoTimerId);
+    state.nextVideoTimerId = null;
+  }
+  state.endedVideo = null;
+  state.endedSource = null;
+  void sendMessage({
+    type: "STATUS_UPDATE",
+    payload: buildPayload(succeeded ? "auto-next-success" : "ended")
   });
 }
 
@@ -284,6 +403,12 @@ function handleTimeupdate() {
 function handleLoadedMetadata() {
   applyVideoPreferences();
   sendProgress("metadata");
+  if (state.endedVideo && !state.video.ended &&
+      (state.video.currentSrc || state.video.src) &&
+      (state.video.currentSrc || state.video.src) !== state.endedSource) {
+    finishAutoNext(true);
+  }
+  void sendMessage({ type: "VIDEO_SELECTED", payload: buildPayload("video-selected") });
 }
 
 function sendProgress(kind) {
@@ -389,6 +514,8 @@ function buildPayload(kind, extra = {}) {
     duration: video ? Number(video.duration || 0) : 0,
     paused: video ? video.paused : false,
     ended: video ? video.ended : false,
+    videoIdentity: state.videoIdentity,
+    source: video ? video.currentSrc || video.src || "" : "",
     ...extra
   };
 }

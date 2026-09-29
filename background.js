@@ -4,6 +4,7 @@ const NOTIFICATION_TITLE = "UOOC 视频提醒";
 const NOTIFICATION_ICON_URL = chrome.runtime.getURL("icon-128.png");
 const ALERT_POPUP_URL = "alert.html";
 const PAUSE_THRESHOLD_SECONDS = 10;
+const NEXT_VIDEO_TIMEOUT_MS = 18 * 1000;
 
 const state = {
   globalEnabled: true,
@@ -13,6 +14,7 @@ const state = {
 let stateLoaded = false;
 let offscreenReadyPromise = null;
 const alertWindowsByTabId = new Map();
+const pendingEndTimersByTabId = new Map();
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   handleMessage(message, sender)
@@ -35,12 +37,18 @@ initialize().catch((error) => {
 async function initialize() {
   await loadState();
   await reconcileTrackedTabs();
+  for (const [tabId, tabState] of Object.entries(state.tabs)) {
+    if (tabState.pendingEndedVideoId) {
+      schedulePendingEnd(Number(tabId), tabState);
+    }
+  }
 
   chrome.tabs.onRemoved.addListener((tabId) => {
     if (!state.tabs[tabId]) {
       return;
     }
 
+    clearPendingEnd(tabId, state.tabs[tabId]);
     delete state.tabs[tabId];
     alertWindowsByTabId.delete(tabId);
     void persistState();
@@ -50,6 +58,9 @@ async function initialize() {
     if (typeof changeInfo.url === "string" &&
         !changeInfo.url.startsWith("https://www.uooc.net.cn/")) {
       void restoreTabMute(tabId);
+      if (state.tabs[tabId]) {
+        clearPendingEnd(tabId, state.tabs[tabId]);
+      }
     }
 
     const tabState = state.tabs[tabId];
@@ -118,6 +129,8 @@ async function handleMessage(message, sender) {
   switch (message?.type) {
     case "STATUS_UPDATE":
       return handleStatusUpdate(message.payload, sender);
+    case "VIDEO_SELECTED":
+      return handleVideoSelected(message.payload, sender);
     case "ALERT_EVENT":
       return handleAlertEvent(message.payload, sender);
     case "GET_MONITOR_STATE":
@@ -184,6 +197,9 @@ async function handleStatusUpdate(payload, sender) {
 
   switch (payload?.kind) {
     case "play":
+      if (canConfirmNextVideo(tabState, payload)) {
+        clearPendingEnd(tabId, tabState);
+      }
       tabState.status = "playing";
       tabState.pausedSince = null;
       tabState.blockedSince = null;
@@ -204,7 +220,22 @@ async function handleStatusUpdate(payload, sender) {
         tabState.status = tabState.pauseAlerted ? "paused_alerted" : "paused_pending";
       }
       break;
+    case "ended-pending":
+      tabState.status = "ended";
+      tabState.pausedSince = null;
+      tabState.pendingPauseAlert = false;
+      tabState.pendingEndedVideoId = payload.videoIdentity;
+      tabState.pendingEndedSource = payload.source;
+      tabState.pendingEndedAt = Date.now();
+      schedulePendingEnd(tabId, tabState);
+      break;
+    case "auto-next-success":
+      clearPendingEnd(tabId, tabState);
+      tabState.status = payload.paused ? "paused_pending" : "playing";
+      tabState.endedAlerted = false;
+      break;
     case "ended":
+      clearPendingEnd(tabId, tabState);
       tabState.status = "ended";
       tabState.pausedSince = null;
       tabState.pendingPauseAlert = false;
@@ -227,6 +258,58 @@ async function handleStatusUpdate(payload, sender) {
 
   await persistState();
   return { ok: true };
+}
+
+async function handleVideoSelected(payload, sender) {
+  const tabId = sender.tab?.id;
+  if (typeof tabId !== "number") {
+    return { ok: false, error: "Missing tab id" };
+  }
+  const tabState = ensureTabState(tabId);
+  if (canConfirmNextVideo(tabState, payload)) {
+    clearPendingEnd(tabId, tabState);
+    tabState.status = payload.paused ? "paused_pending" : "playing";
+    tabState.endedAlerted = false;
+    await persistState();
+  }
+  return { ok: true };
+}
+
+function canConfirmNextVideo(tabState, payload) {
+  return Boolean(tabState.pendingEndedVideoId && payload?.videoIdentity &&
+    payload.videoIdentity !== tabState.pendingEndedVideoId && payload.source &&
+    payload.source !== tabState.pendingEndedSource);
+}
+
+function schedulePendingEnd(tabId, tabState) {
+  const existing = pendingEndTimersByTabId.get(tabId);
+  if (existing) {
+    clearTimeout(existing);
+  }
+  const videoIdentity = tabState.pendingEndedVideoId;
+  const remainingMs = Math.max(0, NEXT_VIDEO_TIMEOUT_MS -
+    (Date.now() - (tabState.pendingEndedAt || Date.now())));
+  const timer = setTimeout(async () => {
+    pendingEndTimersByTabId.delete(tabId);
+    if (tabState.pendingEndedVideoId !== videoIdentity) {
+      return;
+    }
+    clearPendingEnd(tabId, tabState);
+    await maybeAlert(tabId, tabState, "ended");
+    await persistState();
+  }, remainingMs);
+  pendingEndTimersByTabId.set(tabId, timer);
+}
+
+function clearPendingEnd(tabId, tabState) {
+  const timer = pendingEndTimersByTabId.get(tabId);
+  if (timer) {
+    clearTimeout(timer);
+    pendingEndTimersByTabId.delete(tabId);
+  }
+  tabState.pendingEndedVideoId = null;
+  tabState.pendingEndedSource = null;
+  tabState.pendingEndedAt = null;
 }
 
 async function handleAlertEvent(payload, sender) {
@@ -276,6 +359,9 @@ function ensureTabState(tabId, initial = {}) {
       pauseAlerted: false,
       blockedAlerted: false,
       endedAlerted: false,
+      pendingEndedVideoId: null,
+      pendingEndedSource: null,
+      pendingEndedAt: null,
       videoPresent: false
     };
   }
