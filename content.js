@@ -3,7 +3,8 @@ const BLOCKED_THRESHOLD_MS = 15 * 1000;
 const PROGRESS_THROTTLE_MS = 15 * 1000;
 const HEARTBEAT_INTERVAL_MS = 5000;
 const TARGET_PLAYBACK_RATE = 2;
-const NEXT_VIDEO_SETTLE_MS = 2500;
+const NEXT_VIDEO_MIN_DELAY_MS = 3000;
+const NEXT_VIDEO_MAX_DELAY_MS = 7000;
 const NEXT_VIDEO_CONFIRM_MS = 8000;
 
 const BLOCKING_SELECTORS = [
@@ -275,9 +276,11 @@ function handleEnded() {
     payload: buildPayload("ended-pending")
   });
 
+  const nextVideoDelayMs = NEXT_VIDEO_MIN_DELAY_MS + Math.floor(Math.random() *
+    (NEXT_VIDEO_MAX_DELAY_MS - NEXT_VIDEO_MIN_DELAY_MS + 1));
   state.nextVideoTimerId = window.setTimeout(() => {
     void tryNextVideo(state.endedVideo);
-  }, NEXT_VIDEO_SETTLE_MS);
+  }, nextVideoDelayMs);
 }
 
 async function tryNextVideo(endedVideo) {

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "UOOC Video Watcher",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Monitor UOOC videos, select an available next video after playback, and alert when manual action is needed.",
   "permissions": [
     "tabs",
