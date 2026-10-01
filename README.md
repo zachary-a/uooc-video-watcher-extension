@@ -1,106 +1,105 @@
-# UOOC Video Watcher
+# UOOC Video Watcher（改进版）
 
-## 简介
+用于优课在线 UOOC 的浏览器扩展，提供视频状态监控、提醒和按目录顺序切换视频。本仓库基于原项目 Fork，当前扩展版本为 **0.7.0**。
 
-这是一个针对于提高在uooc平台上看视频效率的浏览器拓展工具（提高效率，懂得都懂）
+## 项目来源与署名
 
-这个平台：`https://www.uooc.net.cn/league/union`(别的平台我不保证能用喔)
+| 角色 | GitHub 主页 | 贡献说明 |
+| --- | --- | --- |
+| 原作者 | [liguanlin1212](https://github.com/liguanlin1212) | 创建原项目，提供扩展基础代码、视频监控、提醒界面及原版说明与截图。 |
+| Fork 维护者与功能改进 | [Ecli（@zachary-a）](https://github.com/zachary-a) | 维护本改进版，增加自动切换、随机等待、跨小节与跨章节切换，并补充测试和版本回退说明。 |
 
-在以下场景这个工具会对你有极大的帮助：
-- 看mooc视频的时候，鼠标不能移出窗口，一旦移出窗口视频就暂停（哭）；
-- 或许你是一个能一心多用，勤奋好学的好孩子，喜欢开好多个页面同时看mooc视频，但是由于上一条限制了你的好学；
-- 有些页面的视频播放完后需要切换到下一个视频；
-- 看mooc视频的时候，可能有做题弹窗弹出来而你“恰好”没有留意到，导致视频暂停，效率大大降低（哭）；
+- 原项目：[liguanlin1212/uooc-video-watcher-extension](https://github.com/liguanlin1212/uooc-video-watcher-extension)
+- 本改进版：[zachary-a/uooc-video-watcher-extension](https://github.com/zachary-a/uooc-video-watcher-extension)
 
-如果你的情况符合以上情况，恭喜你，你获得了我的【馈赠】！
+感谢原作者提供的基础项目。以下安装和界面截图沿用原项目，部分界面文案可能与当前版本不同。
 
-但是！！！
-以下情况是在本工具中不存在的且不被允许的：
-- 本工具不涉及ai帮做题，所有的题目需要你独立完成；
-- 本工具不涉及对官方网站的入侵！！！；
+## 功能与改进
 
-## 下载及安装方式（此处以edge举例）
-1. 将仓库内所有文件下载到本地文件夹（最简单的方法下载zip总是会的吧）：
+本项目保留原版的视频状态监控、提示音、弹窗提醒、多标签页监控和手动暂停标记，并在当前版本提供以下功能：
 
-<img width="1098" height="525" alt="image" src="https://github.com/user-attachments/assets/ae64530c-1f9a-489b-89ef-1a8a05d87605" />
+- 视频自然播放结束后，随机等待 **3～7 秒**再尝试选择下一视频。
+- 按目录顺序切换同一小节中的视频；本节结束后，逐层展开下一小节或下一章，支持 `6.2.2 → 6.2.3`、`6.2 → 6.3` 和跨大章切换。
+- 遇到未完成测验、锁定项目、题目弹窗、目录加载失败或无法确认新视频时停止，并保留原有提醒。
+- 网站已标记完成的非视频资源不会阻止继续；确认新视频已加载后，不发结束提醒。
+- 新视频会自动执行原有防暂停逻辑、静音标签页并设为 2 倍速。
 
-2. 打开edge-“拓展”-“管理拓展”-“开发人员选项”-“加载解压缩的拓展”，选择你下载到的文件夹，然后在下方就可以看到拓展“UOOC Video Watcher”：
+本改进版不代答或提交题目，不修改课程完成进度，也不调用网站接口强制解锁。需要做题或处理限制时，请回到课程页面手动完成。
 
-<img width="601" height="675" alt="image" src="https://github.com/user-attachments/assets/b6df3e9c-854c-40d5-a68b-9e9e4ca7b7e1" />
+## 安装与更新
 
-<img width="1323" height="938" alt="image" src="https://github.com/user-attachments/assets/cdcc84da-650d-44dc-bf28-fe43553943f0" />
+适用于 Microsoft Edge、Google Chrome 等支持 Manifest V3 的 Chromium 浏览器。
 
-3. 请检查你的页面是否如下图所示：
+1. 下载[本仓库 ZIP](https://github.com/zachary-a/uooc-video-watcher-extension/archive/refs/heads/master.zip)，解压到固定目录。
+2. 打开浏览器扩展管理页面：Edge 为 `edge://extensions`，Chrome 为 `chrome://extensions`。
+3. 开启“开发者模式”，点击“加载解压缩的扩展”，选择包含 `manifest.json` 的目录。
+4. 打开 [UOOC](https://www.uooc.net.cn/league/union) 课程页面，手动选择并播放第一个视频。
 
-<img width="824" height="847" alt="image" src="https://github.com/user-attachments/assets/fe9b894f-0dd1-4f59-89d5-3796dc758629" />
+<img width="601" height="675" alt="原项目的 Edge 扩展管理页面示例" src="https://github.com/user-attachments/assets/b6df3e9c-854c-40d5-a68b-9e9e4ca7b7e1" />
 
-4. 此时，打开新的uooc页面，就可以愉快的使用本工具了！（使用方法在下边）
-
-更新或重新加载扩展后，请刷新已经打开的 UOOC 课程页面，让新版本脚本进入页面。
-
-## 自动切换下一视频
-
-视频自然播放结束后，扩展会每次随机等待 3～7 秒，再按目录顺序选择下一视频。本小节播放完后，会进入下一小节；当前层级没有后续小节时，会向上查找下一章节，逐层展开并选择其中的第一个视频，支持如 6.2.2 → 6.2.3、6.2 → 6.3 和跨大章的切换。
-
-遇到未完成的测验、锁定项目、题目弹窗、目录加载失败或无法确认新视频时，会停止自动切换，仍会响铃并弹窗请你手动处理；网站已经标记完成的非视频资源不会阻止继续。成功切换到新视频则不发结束提醒。本功能不提交题目、不修改课程进度，也不调用网站接口强制解锁。
-
-使用 Git 回退：原始版本保存为 `v0.5.0`（`6e85cb3`），上一版保存为 `v0.6.1`（`576cf0a`）。如需回退到上一版，可运行 `git switch --detach v0.6.1`；回到最新版可运行 `git switch master`。切换后在浏览器扩展管理页面重新加载扩展，并刷新课程页面。
+更新代码或切换版本后，请在扩展管理页面重新加载扩展，并刷新已经打开的 UOOC 课程页面。
 
 ## 使用方法
-1. 打开一个你爱看的mooc视频（如果是刚下载好工具的同学，重新打开uooc平台），左键打开拓展，右键点击“UOOC Video Watcher”：
 
-  <img width="888" height="734" alt="image" src="https://github.com/user-attachments/assets/5e6a1e1f-89cc-4bb1-b0be-d885490ae4d4" />
+点击浏览器工具栏中的扩展图标打开控制面板。
 
-2. 这时候就可以看到小工具的弹窗了，对按键做如下解释：
-3. 
-   - "手动防暂停"：扩展会在每次打开新视频时自动执行防暂停；如果网页的事件处理被重新绑定，也可以点此按钮再次执行。
-   
-   - “测试提示音”： 没什么卵用，你可以点击一下倾听悦耳的提示音（其实是懒得删了嘻嘻）（同时测试一下功能有没有问题）
-   
-   - “我确实要暂停”： 不排除有的同学确实要暂停视频去干别的事情啊，所以当你手动暂停后点击该按键，就可以不让工具提醒你（真贴心啊我）
-   
-   <img width="553" height="426" alt="image" src="https://github.com/user-attachments/assets/bc50be30-9bba-4bfd-97a7-89fe61b87b11" />
-   
-4. 展示有多个视频需要监控的时候，窗口的样子：
+| 控件 | 用途 |
+| --- | --- |
+| 全局监控 / 页面“启用” | 控制全局或指定页面的监控提醒。 |
+| 手动执行防暂停 | 对当前课程页面再次执行原有防暂停逻辑。新视频也会自动执行。 |
+| 测试提示音 | 检查扩展的提示音是否正常。 |
+| 我确实要暂停 / 恢复提醒 | 手动暂停时暂时关闭该页面的暂停提醒，随后可恢复。 |
 
-   <img width="375" height="600" alt="image" src="https://github.com/user-attachments/assets/83062797-b6cf-479f-9782-ce31e10d87b8" />
-   
-5. 当工具发出提醒的时候，会有这样一个弹窗出现，和一声悦耳动听的提示音（没错！就是前面那个！！！）：
+播放结束后，扩展会等待并检查目录。只有页面中的目标项目可用，且没有题目或弹窗阻挡时，才会继续切换。切换成功后继续监控新视频；遇到阻塞或课程已无后续视频时，弹窗提醒用户处理。普通暂停超过 10 秒或疑似被题目卡住时，也会按原有逻辑提醒。
 
-   <img width="425" height="325" alt="image" src="https://github.com/user-attachments/assets/f8b0e0c1-96a0-4179-b682-d019d18ea85f" />
+<img width="553" height="426" alt="原项目的扩展控制面板示例" src="https://github.com/user-attachments/assets/bc50be30-9bba-4bfd-97a7-89fe61b87b11" />
 
-6. （现在应该傻子都会用了吧。。）另外分享一个小技巧，可以将这个工具固定在工具栏，方便使用：
+<img width="425" height="325" alt="原项目的视频提醒弹窗示例" src="https://github.com/user-attachments/assets/f8b0e0c1-96a0-4179-b682-d019d18ea85f" />
 
-   <img width="542" height="453" alt="image" src="https://github.com/user-attachments/assets/0fc44158-4fb1-4ab8-9a70-6b478214f031" />
+## 版本与回退
 
-   <img width="377" height="348" alt="image" src="https://github.com/user-attachments/assets/19041cfb-4085-46c9-b9a1-93bc68fdaa40" />
+上游项目及本地改进提交历史均保留在 Git 中。以下标签对应本地改进过程，并非上游项目的发布版本：
 
-## 结语
+| 标签 | 内容 |
+| --- | --- |
+| `v0.5.0` | 本地修改前的基线版本。 |
+| `v0.6.0` | 自动选择下一视频，成功时取消结束提醒。 |
+| `v0.6.1` | 增加 3～7 秒随机等待。 |
+| `v0.7.0` | 支持跨小节、跨章节及跨大章切换。 |
 
-如果这个工具对同学们有帮助的话，请大家点一点star（感恩感恩感恩）
+使用 Git 克隆本改进版：
 
-<img width="1245" height="260" alt="image" src="https://github.com/user-attachments/assets/ce0be728-cf8c-47fb-acfa-2c5b40c44138" />
+```shell
+git clone https://github.com/zachary-a/uooc-video-watcher-extension.git
+cd uooc-video-watcher-extension
+```
 
-（我都放个照片标出来了大家就随手点个赞呗~）
+例如，临时回到上一版：
 
-如果有想提意见滴同学，请往这个邮箱里发，说明你的问题和附上相关照片，不然我是不了解你到底哪里出问题滴~
+```shell
+git switch --detach v0.6.1
+```
 
-邮箱: 
+返回当前维护分支：
 
-`2025150200@mails.szu.edu.cn`
+```shell
+git switch master
+```
 
-`3179313258@qq.com`
+切换前请先提交或保存自己的改动。切换后重新加载扩展并刷新课程页面。
 
-如果有大佬有改进的想法，可以直接fork给我，我应该会看的（应该吧。。。）
+## 验证
 
-如果有小佬也有改进意见但不知道怎么fork的，参考这篇文章，fork给我：
+使用 Node.js 内置测试运行器：
 
-`https://blog.csdn.net/w_D_lufei/article/details/103059857`
+```shell
+node --test auto-next.test.cjs cross-chapter.test.cjs
+```
 
-纯手打README，累死了（嘎巴一下死在电脑前）
+当前 22 项测试覆盖同节切换、跨小节、跨章、异步目录加载、未完成测验、锁定项目、弹窗阻挡和失败提醒。跨章功能目前通过目录页面样例验证，尚未完成登录后的真实课程实测；页面结构变化时，扩展会停止切换并保留提醒。
 
+## 反馈与贡献
 
-
-
-
-
+- 本改进版的问题或建议，请提交到[本仓库 Issues](https://github.com/zachary-a/uooc-video-watcher-extension/issues)。建议附上扩展版本、章节层级、页面状态及复现步骤。
+- 原项目的讨论与基础功能说明，请参阅[原项目](https://github.com/liguanlin1212/uooc-video-watcher-extension)。
+- 欢迎通过 Pull Request 提交改进，也感谢为原项目和本改进版提供反馈。
