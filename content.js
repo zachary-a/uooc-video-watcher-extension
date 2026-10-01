@@ -6,6 +6,9 @@ const TARGET_PLAYBACK_RATE = 2;
 const NEXT_VIDEO_MIN_DELAY_MS = 3000;
 const NEXT_VIDEO_MAX_DELAY_MS = 7000;
 const NEXT_VIDEO_CONFIRM_MS = 8000;
+const CATALOG_NAVIGATION_TIMEOUT_MS = 20000;
+const CATALOG_POLL_MS = 250;
+const MAX_CATALOG_DEPTH = 12;
 
 const BLOCKING_SELECTORS = [
   ".el-dialog__wrapper",
@@ -251,7 +254,7 @@ function handlePause() {
   });
 
   state.pauseTimerId = window.setTimeout(() => {
-    if (!state.video || !state.video.paused || state.video.ended) {
+    if (!state.video || !state.video.paused || state.video.ended || state.endedVideo) {
       return;
     }
 
@@ -297,14 +300,28 @@ async function tryNextVideo(endedVideo) {
     return;
   }
 
-  const nextControl = findAvailableNextControl();
+  let nextControl;
+  try {
+    const action = findNextCourseAction();
+    nextControl = action?.kind === "catalog"
+      ? await findVideoInCatalogNode(action.node, endedVideo)
+      : action?.control;
+  } catch (error) {
+    console.debug("Next video selection failed", error);
+  }
+  if (state.endedVideo !== endedVideo) {
+    return;
+  }
   if (!nextControl) {
     finishAutoNext(false);
     return;
   }
 
-  const oldSource = endedVideo.currentSrc || endedVideo.src;
-  nextControl.click();
+  const oldSource = state.endedSource;
+  if (findBlockingElement() || !clickAvailableControl(nextControl)) {
+    finishAutoNext(false);
+    return;
+  }
 
   // A normal page navigation may unload this script. The background worker
   // keeps the pending reminder until a new video is actually selected.
@@ -323,16 +340,27 @@ async function tryNextVideo(endedVideo) {
   }
 }
 
-function findAvailableNextControl() {
+function findNextCourseAction() {
   const activeVideoItem = [...document.querySelectorAll(".basic.active")]
     .find((item) => item.querySelector(".icon-video"));
   if (activeVideoItem) {
-    const items = [...document.querySelectorAll(".basic")];
-    const nextItem = items[items.indexOf(activeVideoItem) + 1];
-    // Do not skip a quiz, locked item, or collapsed chapter to reach a later video.
-    return nextItem?.querySelector(".icon-video") &&
-      !nextItem.querySelector(".icon-lock, .icon-locked") && isAvailableControl(nextItem)
-      ? nextItem : null;
+    const resourceList = activeVideoItem.closest(".resourcelist");
+    const items = [...(resourceList || document).querySelectorAll(".basic")];
+    const remaining = items.slice(items.indexOf(activeVideoItem) + 1);
+    const nextItem = resourceList ? nextRequiredResource(remaining) : remaining[0];
+    if (nextItem) {
+      // An unfinished resource such as a quiz must be handled before leaving this section.
+      return isVideoControl(nextItem) && isControlEnabled(nextItem)
+        ? { kind: "video", control: nextItem } : null;
+    }
+    if (resourceList) {
+      const labels = [...document.querySelectorAll(".oneline.active")]
+        .filter((label) => !label.closest(".resourcelist"));
+      const currentNode = labels.at(-1)?.closest("li, .catalogItem");
+      const nextNode = findNextCatalogNode(currentNode);
+      return nextNode ? { kind: "catalog", node: nextNode } : null;
+    }
+    return null;
   }
 
   const controls = document.querySelectorAll("button, a, [role='button']");
@@ -343,14 +371,127 @@ function findAvailableNextControl() {
       continue;
     }
     if (isAvailableControl(control)) {
-      return control;
+      return { kind: "video", control };
     }
   }
   return null;
 }
 
-function isAvailableControl(control) {
-  if (control.closest("[disabled], [aria-disabled='true'], [inert], .disabled, .is-disabled, .locked, .is-locked")) {
+function findNextCatalogNode(currentNode) {
+  let node = currentNode;
+  while (node) {
+    if (node.nextElementSibling) {
+      return getCatalogControl(node.nextElementSibling) ? node.nextElementSibling : null;
+    }
+    node = node.parentElement?.closest("li, .catalogItem");
+  }
+  return null;
+}
+
+function getCatalogControl(node) {
+  return [...node.querySelectorAll(".chapter, .basic")].find((control) =>
+    !control.closest(".resourcelist") && control.closest("li, .catalogItem") === node) || null;
+}
+
+function getCatalogChildren(node) {
+  return [...node.querySelectorAll("li, .catalogItem")].filter((child) =>
+    child.parentElement?.closest("li, .catalogItem") === node && getCatalogControl(child));
+}
+
+function readResourceList(node = document) {
+  const list = [...node.querySelectorAll(".resourcelist")].find(isControlVisible);
+  const items = list ? [...list.querySelectorAll(".basic")] : [];
+  return { list, items, text: items.map((item) => item.textContent).join("\n") };
+}
+
+function resourceListChanged(before, after) {
+  return after.items.length > 0 && (before.list !== after.list ||
+    before.text !== after.text || before.items.length !== after.items.length ||
+    after.items.some((item, index) => before.items[index] !== item));
+}
+
+async function findVideoInCatalogNode(firstNode, endedVideo) {
+  const deadline = Date.now() + CATALOG_NAVIGATION_TIMEOUT_MS;
+  const before = readResourceList();
+  let node = firstNode;
+  for (let depth = 0; node && depth < MAX_CATALOG_DEPTH; depth += 1) {
+    if (Date.now() >= deadline || state.endedVideo !== endedVideo || findBlockingElement()) {
+      return null;
+    }
+    const control = getCatalogControl(node);
+    if (!control || !isControlEnabled(control)) {
+      return null;
+    }
+    const children = getCatalogChildren(node);
+    const firstChild = children[0];
+    if (firstChild && isControlVisible(getCatalogControl(firstChild))) {
+      node = firstChild;
+      continue;
+    }
+
+    if (!clickAvailableControl(control)) {
+      return null;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, CATALOG_POLL_MS));
+
+    let loaded = null;
+    while (Date.now() < deadline && state.endedVideo === endedVideo) {
+      if (findBlockingElement()) {
+        return null;
+      }
+      const child = getCatalogChildren(node)[0];
+      if (child && isControlVisible(getCatalogControl(child))) {
+        loaded = { child };
+        break;
+      }
+      const scoped = readResourceList(node);
+      const global = readResourceList();
+      const selected = [...node.querySelectorAll(".oneline.active")].some((label) =>
+        label.closest("li, .catalogItem") === node);
+      const resources = scoped.items.length ? scoped
+        : selected && resourceListChanged(before, global) ? global : null;
+      if (resources) {
+        // Let the page finish replacing its list before selecting the first item.
+        await new Promise((resolve) => window.setTimeout(resolve, CATALOG_POLL_MS));
+        if (state.endedVideo !== endedVideo || findBlockingElement()) {
+          return null;
+        }
+        const refreshed = readResourceList(scoped.items.length ? node : document);
+        if (refreshed.items[0] === resources.items[0] && refreshed.text === resources.text) {
+          loaded = { resources: refreshed };
+          break;
+        }
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, CATALOG_POLL_MS));
+    }
+    if (!loaded) {
+      return null;
+    }
+    if (loaded.resources) {
+      const first = nextRequiredResource(loaded.resources.items);
+      return isVideoControl(first) && isControlEnabled(first) ? first : null;
+    }
+    node = loaded.child;
+  }
+  return null;
+}
+
+function isVideoControl(control) {
+  return Boolean(control?.querySelector(".icon-video"));
+}
+
+function nextRequiredResource(items) {
+  return items.find((item) => isVideoControl(item) || !item.classList?.contains("complete")) || null;
+}
+
+function isControlEnabled(control) {
+  return Boolean(control && !control.closest(
+    "[disabled], [aria-disabled='true'], [inert], .disabled, .is-disabled, .locked, .is-locked") &&
+    !control.querySelector(".icon-lock, .icon-locked"));
+}
+
+function isControlVisible(control) {
+  if (!control || control.closest("[hidden]")) {
     return false;
   }
   const style = window.getComputedStyle(control);
@@ -358,8 +499,28 @@ function isAvailableControl(control) {
     return false;
   }
   const rect = control.getBoundingClientRect();
-  return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.right > 0 &&
+  return rect.width > 0 && rect.height > 0;
+}
+
+function isAvailableControl(control) {
+  if (!isControlEnabled(control) || !isControlVisible(control)) {
+    return false;
+  }
+  const rect = control.getBoundingClientRect();
+  return rect.bottom > 0 && rect.right > 0 &&
     rect.top < window.innerHeight && rect.left < window.innerWidth;
+}
+
+function clickAvailableControl(control) {
+  if (!isControlEnabled(control) || !isControlVisible(control)) {
+    return false;
+  }
+  control.scrollIntoView({ block: "nearest", inline: "nearest" });
+  if (!isAvailableControl(control)) {
+    return false;
+  }
+  control.click();
+  return true;
 }
 
 function finishAutoNext(succeeded) {
@@ -376,6 +537,9 @@ function finishAutoNext(succeeded) {
     type: "STATUS_UPDATE",
     payload: buildPayload(succeeded ? "auto-next-success" : "ended")
   });
+  if (succeeded && state.video?.paused && !state.video.ended) {
+    handlePause();
+  }
 }
 
 function handleWaiting() {

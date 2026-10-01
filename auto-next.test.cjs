@@ -34,7 +34,7 @@ function contentProbe({ active = [], items = [], controls = [] }) {
     }
   };
   const source = fs.readFileSync(path.join(__dirname, "content.js"), "utf8");
-  vm.runInNewContext(`${source}\nglobalThis.probe = findAvailableNextControl;`, context);
+  vm.runInNewContext(`${source}\nglobalThis.probe = () => findNextCourseAction()?.control || null;`, context);
   return context.probe();
 }
 
@@ -101,7 +101,7 @@ async function backgroundProbe() {
     clearTimeout(id) { timers.delete(id); }
   };
   const source = fs.readFileSync(path.join(__dirname, "background.js"), "utf8");
-  vm.runInNewContext(`${source}\nglobalThis.probe = { handleStatusUpdate, handleVideoSelected, resetRuntimeState, state };`, context);
+  vm.runInNewContext(`${source}\nglobalThis.probe = { handleStatusUpdate, handleVideoSelected, handleAlertEvent, resetRuntimeState, state };`, context);
   await new Promise((resolve) => setImmediate(resolve));
   return { ...context.probe, notifications, timers };
 }
@@ -137,5 +137,15 @@ test("page loading does not erase a pending reminder", async () => {
   assert.equal(worker.state.tabs[7].pendingEndedVideoId, "old");
   const timer = [...worker.timers.values()][0];
   await timer();
+  assert.equal(worker.notifications[0], "uooc-7-ended");
+});
+
+test("does not show a pause reminder while chapter navigation is pending", async () => {
+  const worker = await backgroundProbe();
+  const sender = { tab: { id: 7 } };
+  await worker.handleStatusUpdate(payload("ended-pending", "old", "old.mp4"), sender);
+  await worker.handleAlertEvent(payload("pause-timeout", "old", "old.mp4"), sender);
+  assert.equal(worker.notifications.length, 0);
+  await worker.handleStatusUpdate(payload("ended", "old", "old.mp4"), sender);
   assert.equal(worker.notifications[0], "uooc-7-ended");
 });

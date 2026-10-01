@@ -4,7 +4,7 @@ const NOTIFICATION_TITLE = "UOOC 视频提醒";
 const NOTIFICATION_ICON_URL = chrome.runtime.getURL("icon-128.png");
 const ALERT_POPUP_URL = "alert.html";
 const PAUSE_THRESHOLD_SECONDS = 10;
-const NEXT_VIDEO_TIMEOUT_MS = 18 * 1000;
+const NEXT_VIDEO_TIMEOUT_MS = 40 * 1000;
 
 const state = {
   globalEnabled: true,
@@ -325,6 +325,10 @@ async function handleAlertEvent(payload, sender) {
 
   tabState.title = payload?.title || sender.tab?.title || tabState.title;
   tabState.url = payload?.url || sender.tab?.url || tabState.url;
+
+  if (tabState.pendingEndedVideoId) {
+    return { ok: true };
+  }
 
   if (payload?.kind === "pause-timeout") {
     await maybeAlert(tabId, tabState, "pause-timeout");
